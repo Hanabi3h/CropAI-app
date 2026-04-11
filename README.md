@@ -2,6 +2,9 @@
 
 **An AI-powered system that helps local farmers optimize crop sales, minimize by-product waste, and strengthen food security through intelligent forecasting and waste-to-value recommendations.**
 
+
+## Link To the System: https://cropaiforecasting.streamlit.app/
+
 ---
 
 ## Table of Contents
