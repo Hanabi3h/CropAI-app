@@ -1,4 +1,4 @@
-# 🌾 CropAI - Smart Farming Decision Support System
+# 🌾 CropAI - Crop Sales Forecasing Systtem
 
 **An AI-powered system that helps local farmers optimize crop sales, minimize by-product waste, and strengthen food security through intelligent forecasting and waste-to-value recommendations.**
 
