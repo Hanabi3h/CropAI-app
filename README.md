@@ -4,7 +4,7 @@
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#overview)
 - [System Requirements](#system-requirements)
@@ -29,7 +29,6 @@ CropAI combines **Fuzzy Logic**, **Random Forest**, and **Clustering** technique
 | 🔄 **Waste-to-Value** | Suggests by-products from waste materials with vendor partners |
 | 🏆 **Crop Ranking** | Shows top 5 most profitable crops for food security |
 | 🗺️ **Geographic Analytics** | Maps production and sales by state/district |
-| 🎁 **Rewards System** | Earn points from waste exchange, redeemable for farming supplies |
 | 📈 **Food Security Score** | Quantifiable 0-100 metric for each crop and district |
 
 ---
