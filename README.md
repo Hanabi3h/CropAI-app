@@ -53,3 +53,26 @@ CropAI combines **Fuzzy Logic**, **Random Forest**, and **Clustering** technique
 ---
 
 ## Project Structure
+
+## Installation Guide
+
+| Step | Action | Command |
+|------|--------|---------|
+| 1 | Open terminal | `Ctrl + `` ` |
+| 2 | Navigate to project | `cd C:\Users\user\foodsecurity-app` |
+| 3 | Activate venv | `.\venv\Scripts\Activate.ps1` |
+| 4 | Run app | `streamlit run app.py` |
+| 5 | Open browser | Go to `http://localhost:8501` |
+
+### Step 1: Download or Clone the Project
+
+**Option A: Download ZIP**
+1. Download the project ZIP file
+2. Extract to `C:\Users\user\foodsecurity-app` (or your preferred location)
+
+**Option B: Using Git**
+```bash
+git clone https://github.com/yourusername/foodsecurity-app.git
+cd foodsecurity-app
+
+
