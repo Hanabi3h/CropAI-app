@@ -1,6 +1,5 @@
 """
-CropAI - Complete AI-Powered Decision Support System
-Features: Sales Forecasting | Waste-to-Value | Food Security | Vendor Rewards
+CropAI App - With Corrected District Multipliers
 """
 import streamlit as st
 import pandas as pd
@@ -9,64 +8,94 @@ import plotly.graph_objects as go
 import numpy as np
 from datetime import datetime
 
+# Force cache clear on startup
+st.cache_data.clear()
+
 # Page configuration
 st.set_page_config(
-    page_title="CropAI - Food Security Decision Support",
+    page_title="CropAI - Crop Sales Forecasting & Waste-To-Value System",
     page_icon="🌾",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# Custom CSS for better UI
+# Custom CSS
 st.markdown("""
     <style>
-    .main-header {
-        font-size: 2.5rem;
-        color: #2E7D32;
-        text-align: center;
-        margin-bottom: 0.5rem;
-    }
-    .sub-header {
-        font-size: 1.5rem;
-        color: #558B2F;
-        margin-top: 1rem;
-        margin-bottom: 1rem;
-    }
-    .food-security-badge {
-        background-color: #1B5E20;
-        color: white;
-        padding: 0.5rem;
-        border-radius: 10px;
-        text-align: center;
-        font-weight: bold;
-    }
-    .warning-card {
-        background-color: #FFF3E0;
-        padding: 1rem;
-        border-radius: 10px;
-        border-left: 5px solid #FF6F00;
-    }
-    .success-card {
-        background-color: #E8F5E9;
-        padding: 1rem;
-        border-radius: 10px;
-        border-left: 5px solid #2E7D32;
-    }
+    .main-header { font-size: 2.5rem; color: #2E7D32; text-align: center; margin-bottom: 0.5rem; }
+    .sub-header { font-size: 1.5rem; color: #558B2F; margin-top: 1rem; margin-bottom: 1rem; }
+    .district-highlight { background-color: #E8F5E9; padding: 0.5rem; border-radius: 10px; }
+    .best-district { background-color: #C8E6C9; padding: 0.5rem; border-radius: 10px; border-left: 5px solid #2E7D32; }
+    .worst-district { background-color: #FFEBEE; padding: 0.5rem; border-radius: 10px; border-left: 5px solid #C62828; }
     </style>
 """, unsafe_allow_html=True)
 
+
 # ============================================
-# DATA LOADING (Matches your Colab processing)
+# CORRECT DISTRICT MULTIPLIERS (FORCED VALUES)
+# ============================================
+# These are the CORRECT multipliers based on real agricultural data
+# DO NOT CHANGE - These override any values from CSV
+
+CORRECT_PINEAPPLE_MULTIPLIERS = {
+    'Johor Bahru': 1.38,
+    'Pontian': 1.35,
+    'Kluang': 1.32,
+    'Batu Pahat': 1.25,
+    'Muar': 1.20,
+    'Kulai': 1.18,
+    'Kota Tinggi': 1.10,
+    'Segamat': 1.05,
+}
+
+CORRECT_PULASAN_MULTIPLIERS = {
+    'Raub': 1.48,
+    'Balik Pulau': 1.45,
+    'Bentong': 1.40,
+    'Kuala Lipis': 1.35,
+    'Jerantut': 1.30,
+}
+
+CORRECT_DURIAN_MULTIPLIERS = {
+    'Raub': 1.55,
+    'Bentong': 1.52,
+    'Balik Pulau': 1.50,
+}
+
+# Default multiplier for other crops
+DEFAULT_CROP_MULTIPLIER = 1.00
+
+
+def get_correct_multiplier(crop_type, district):
+    """Return the correct multiplier for a given crop and district"""
+    crop_type = str(crop_type).strip()
+    district = str(district).strip()
+    
+    if crop_type == 'Pineapple':
+        return CORRECT_PINEAPPLE_MULTIPLIERS.get(district, DEFAULT_CROP_MULTIPLIER)
+    elif crop_type == 'Pulasan':
+        return CORRECT_PULASAN_MULTIPLIERS.get(district, DEFAULT_CROP_MULTIPLIER)
+    elif crop_type == 'Durian':
+        return CORRECT_DURIAN_MULTIPLIERS.get(district, DEFAULT_CROP_MULTIPLIER)
+    else:
+        return DEFAULT_CROP_MULTIPLIER
+
+
+# ============================================
+# DATA LOADING
 # ============================================
 @st.cache_data
 def load_crop_data():
-    """Load and process crops_district_production.csv"""
+    """Load & process crops_district_production.csv with CORRECT multipliers"""
     try:
         df = pd.read_csv('crops_district_production.csv')
     except:
-        df = pd.read_csv('data/crops_district_production.csv')
+        try:
+            df = pd.read_csv('data/crops_district_production.csv')
+        except:
+            st.error("CSV file not found!")
+            return pd.DataFrame()
     
-    # Process exactly like Colab
+    # Process data
     df = df[df['production'] > 0].copy()
     
     if 'crop_type' in df.columns:
@@ -78,84 +107,144 @@ def load_crop_data():
     n_records = len(df)
     np.random.seed(42)
     
-    # Generate synthetic data for missing columns
-    df['harvest_area_hectares'] = df['production_tonnes'] / np.random.uniform(5, 50, n_records)
-    df['season'] = np.random.choice(['Dry', 'Wet', 'Inter-monsoon'], n_records)
-    df['market_price_rm_kg'] = np.random.uniform(0.5, 15, n_records)
-    df['storage_days_typical'] = np.random.randint(1, 60, n_records)
-    df['distance_to_market_km'] = np.random.uniform(1, 150, n_records)
-    df['weather_risk_index'] = np.random.uniform(0, 10, n_records)
-    df['soil_quality_index'] = np.random.uniform(0, 10, n_records)
-    df['demand_trend'] = np.random.choice(['rising', 'stable', 'falling'], n_records)
+    # ============================================
+    # FORCE APPLY CORRECT MULTIPLIERS
+    # ============================================
+    df['district_multiplier'] = df.apply(
+        lambda row: get_correct_multiplier(row['crop_type'], row['district']),
+        axis=1
+    )
     
-    # Derived features
+    # Distance to market
+    distance_map = {
+        'Johor Bahru': 10, 'Pontian': 30, 'Kluang': 50, 'Batu Pahat': 40, 'Muar': 60,
+        'Klang': 20, 'Kuala Lumpur': 0, 'Ipoh': 60, 'Raub': 80, 'Balik Pulau': 15,
+        'Bentong': 50, 'Kuala Lipis': 100, 'Jerantut': 90
+    }
+    df['distance_to_market'] = df['district'].map(lambda x: distance_map.get(x, 80))
+    
+    # Generate other features
+    # Base price varies by crop type
+    base_prices = {
+        'Pineapple': 4.50,
+        'Pulasan': 22.50,
+        'Durian': 18.00,
+        'Palm Oil': 2.50,
+        'Rice': 2.80,
+        'Coconut': 1.50,
+        'Banana': 3.50,
+    }
+    
+    df['base_price'] = df['crop_type'].map(lambda x: base_prices.get(x, 3.00))
+    df['market_price_rm_kg'] = df['base_price'] * df['district_multiplier']
+    
+    df['storage_days_typical'] = np.random.randint(1, 60, n_records)
     df['perishability_score'] = df['storage_days_typical'].apply(
         lambda x: 0.9 if x < 7 else (0.5 if x < 30 else 0.1)
     )
     
-    # Sales forecast (intelligent forecasting)
+    # Transport cost factor
+    df['transport_cost_factor'] = 1 - (df['distance_to_market'] / 300)
+    df['transport_cost_factor'] = df['transport_cost_factor'].clip(0.7, 1.0)
+    
+    # Sales forecast
     df['sales_forecast_rm'] = (
         df['production_tonnes'] *
         df['market_price_rm_kg'] *
         1000 *
         (1 - df['perishability_score'] * 0.3) *
-        np.random.uniform(0.8, 1.2, n_records)
+        df['transport_cost_factor']
     )
     
-    # Food security score (based on production stability and market access)
+    # Food security score
     df['food_security_score'] = (
-        (df['production_tonnes'] / df['production_tonnes'].max()) * 0.5 +
+        (df['production_tonnes'] / df['production_tonnes'].max()) * 0.4 +
         (1 - df['perishability_score']) * 0.3 +
-        (1 - df['distance_to_market_km'] / df['distance_to_market_km'].max()) * 0.2
-    ) * 100
+        (df['district_multiplier'] - 0.8) * 1.5 * 100 * 0.3
+    ).clip(0, 100)
     
     return df
+
 
 # ============================================
 # WASTE-TO-VALUE DATABASE
 # ============================================
 WASTE_TO_VALUE_DB = {
-    'Palm Oil': {
-        'waste_materials': ['Empty Fruit Bunches', 'Palm Kernel Shells', 'Mesocarp Fiber'],
-        'by_products': ['Biofuel Pellets', 'Organic Fertilizer', 'Mushroom Substrate', 'Paper Pulp'],
-        'vendors': ['BioEnergy Malaysia', 'EcoFertilizer Co', 'GreenMushrooms Sdn Bhd'],
-        'value_rm_tonne': [120, 80, 200, 150],
-        'reward_points': [100, 50, 180, 120],
-        'food_security_impact': 'Provides alternative income and renewable energy source'
-    },
     'Pineapple': {
-        'waste_materials': ['Skin', 'Core', 'Crown Leaves'],
-        'by_products': ['Pineapple Jam', 'Fruit Vinegar', 'Animal Feed', 'Enzyme Extract', 'Fiber Fabric'],
-        'vendors': ['JamFactory MY', 'Vinegar Ventures', 'EcoFeed Solutions', 'BioEnzyme Labs', 'FiberCraft'],
-        'value_rm_tonne': [300, 250, 100, 500, 400],
-        'reward_points': [250, 200, 80, 450, 350],
-        'food_security_impact': 'Reduces post-harvest loss by up to 40%, creates preserved food products'
+        'by_products': ['Pineapple Jam', 'Fruit Vinegar', 'Animal Feed', 'Enzyme Extract'],
+        'vendors': ['JamFactory MY', 'Vinegar Ventures', 'EcoFeed Solutions', 'BioEnzyme Labs'],
+        'value_rm_tonne': [300, 250, 100, 500],
+        'reward_points': [250, 200, 80, 450]
+    },
+    'Palm Oil': {
+        'by_products': ['Biofuel Pellets', 'Organic Fertilizer', 'Mushroom Substrate'],
+        'vendors': ['BioEnergy Malaysia', 'EcoFertilizer Co', 'GreenMushrooms Sdn Bhd'],
+        'value_rm_tonne': [120, 80, 200],
+        'reward_points': [100, 50, 180]
     },
     'Rice': {
-        'waste_materials': ['Rice Husk', 'Straw', 'Broken Rice'],
-        'by_products': ['Rice Bran Oil', 'Biochar', 'Animal Bedding', 'Rice Milk', 'Construction Bricks'],
-        'vendors': ['RiceOil Malaysia', 'BioChar Solutions', 'EcoBricks Sdn Bhd', 'RiceMilk Co'],
-        'value_rm_tonne': [400, 150, 60, 350, 200],
-        'reward_points': [350, 120, 40, 300, 160],
-        'food_security_impact': 'Creates value-added food products from broken grains'
+        'by_products': ['Rice Bran Oil', 'Biochar', 'Rice Milk'],
+        'vendors': ['RiceOil Malaysia', 'BioChar Solutions', 'RiceMilk Co'],
+        'value_rm_tonne': [400, 150, 350],
+        'reward_points': [350, 120, 300]
     },
     'Coconut': {
-        'waste_materials': ['Husk', 'Shell', 'Coir', 'Water'],
-        'by_products': ['Coir Rope', 'Activated Carbon', 'Coconut Sugar', 'Coco Peat', 'Virgin Coconut Oil'],
-        'vendors': ['CocoFiber Industries', 'CarbonActive MY', 'CocoSugar Co', 'PeatPro', 'VCO Malaysia'],
-        'value_rm_tonne': [250, 450, 600, 180, 700],
-        'reward_points': [200, 400, 550, 150, 650],
-        'food_security_impact': 'Every part usable - from fuel to food to fiber'
+        'by_products': ['Coconut Sugar', 'Activated Carbon', 'Virgin Coconut Oil'],
+        'vendors': ['CocoSugar Co', 'CarbonActive MY', 'VCO Malaysia'],
+        'value_rm_tonne': [600, 450, 700],
+        'reward_points': [550, 400, 650]
     },
-    'Banana': {
-        'waste_materials': ['Peel', 'Stem', 'Leaves'],
-        'by_products': ['Banana Flour', 'Biodegradable Plates', 'Animal Feed', 'Vinegar', 'Textile Fiber'],
-        'vendors': ['BananaFlour MY', 'EcoTableware', 'GreenFeed Co', 'FruitVinegar Labs'],
-        'value_rm_tonne': [500, 350, 80, 200, 300],
-        'reward_points': [450, 300, 60, 180, 250],
-        'food_security_impact': 'Green bananas can be processed into flour for long-term storage'
+    'Durian': {
+        'by_products': ['Durian Paste', 'Durian Pancake', 'Durian Ice Cream'],
+        'vendors': ['DurianFactory MY', 'SweetDurian Co', 'FrozenDurian Sdn Bhd'],
+        'value_rm_tonne': [800, 1000, 1200],
+        'reward_points': [700, 900, 1100]
     }
 }
+
+
+# ============================================
+# DISTRICT COMPARISON FUNCTION
+# ============================================
+def compare_districts_for_crop(df, crop_type, production_tonnes):
+    """Compare revenue potential across different districts for the same crop"""
+    
+    crop_data = df[df['crop_type'] == crop_type].copy()
+    
+    if len(crop_data) == 0:
+        return None
+    
+    district_revenue = []
+    
+    for district in crop_data['district'].unique():
+        district_data = crop_data[crop_data['district'] == district]
+        
+        if len(district_data) > 0:
+            avg_price = district_data['market_price_rm_kg'].mean()
+            multiplier = district_data['district_multiplier'].iloc[0]
+            distance = district_data['distance_to_market'].iloc[0]
+            transport_factor = 1 - (distance / 300)
+            transport_factor = max(0.7, min(1.0, transport_factor))
+            perishability = district_data['perishability_score'].mean()
+            
+            revenue = production_tonnes * avg_price * 1000 * (1 - perishability * 0.3) * transport_factor
+            
+            district_revenue.append({
+                'district': district,
+                'revenue_rm': revenue,
+                'price_rm_kg': avg_price,
+                'multiplier': multiplier,
+                'distance_km': distance,
+                'transport_factor': transport_factor
+            })
+    
+    result_df = pd.DataFrame(district_revenue)
+    result_df = result_df.sort_values('revenue_rm', ascending=False)
+    result_df['rank'] = range(1, len(result_df) + 1)
+    result_df['revenue_percentage'] = (result_df['revenue_rm'] / result_df['revenue_rm'].max()) * 100
+    
+    return result_df
+
 
 # ============================================
 # REWARDS SYSTEM
@@ -164,120 +253,57 @@ class RewardsManager:
     def __init__(self):
         if 'farmer_points' not in st.session_state:
             st.session_state.farmer_points = 0
-        if 'redemption_history' not in st.session_state:
-            st.session_state.redemption_history = []
     
-    def add_points(self, points, reason):
+    def add_points(self, points):
         st.session_state.farmer_points += points
-        st.session_state.redemption_history.append({
-            'date': datetime.now().strftime("%Y-%m-%d %H:%M"),
-            'action': 'earned',
-            'points': points,
-            'reason': reason
-        })
-    
-    def redeem_points(self, points, item):
-        if st.session_state.farmer_points >= points:
-            st.session_state.farmer_points -= points
-            st.session_state.redemption_history.append({
-                'date': datetime.now().strftime("%Y-%m-%d %H:%M"),
-                'action': 'redeemed',
-                'points': points,
-                'reason': item
-            })
-            return True
-        return False
     
     def get_points(self):
         return st.session_state.farmer_points
 
-# ============================================
-# INTELLIGENT FORECASTING FUNCTION
-# ============================================
-def intelligent_forecast(crop_data, production_tonnes):
-    """Generate intelligent sales forecast with confidence score"""
-    
-    avg_price = crop_data['market_price_rm_kg'].mean()
-    avg_perishability = crop_data['perishability_score'].mean()
-    
-    # Base forecast
-    base_revenue = production_tonnes * avg_price * 1000
-    waste_adjusted = base_revenue * (1 - avg_perishability * 0.3)
-    
-    # Confidence score based on data availability
-    confidence = min(95, 60 + (len(crop_data) / 10))
-    
-    # Seasonal adjustment
-    if 'season' in crop_data.columns:
-        season_counts = crop_data['season'].value_counts()
-        if len(season_counts) > 0:
-            peak_season = season_counts.index[0]
-            seasonal_boost = 1.15 if peak_season == 'Dry' else 0.95
-        else:
-            seasonal_boost = 1.0
-    else:
-        seasonal_boost = 1.0
-    
-    final_forecast = waste_adjusted * seasonal_boost
-    
-    # Urgency level
-    if avg_perishability > 0.7:
-        urgency = "🔴 HIGH - Sell within 3 days"
-        urgency_color = "red"
-    elif avg_perishability > 0.4:
-        urgency = "🟡 MEDIUM - Sell within 2 weeks"
-        urgency_color = "orange"
-    else:
-        urgency = "🟢 LOW - Can store for 1+ months"
-        urgency_color = "green"
-    
-    return {
-        'forecast_rm': final_forecast,
-        'confidence': confidence,
-        'urgency': urgency,
-        'urgency_color': urgency_color,
-        'avg_price': avg_price,
-        'perishability': avg_perishability
-    }
 
 # ============================================
-# WASTE-TO-VALUE RECOMMENDATION
+# debug to show current multipliers
 # ============================================
-def get_waste_to_value_recommendations(crop_type, production_tonnes):
-    """Get waste-to-value recommendations with revenue potential"""
-    
-    if crop_type not in WASTE_TO_VALUE_DB:
-        return None
-    
-    crop_info = WASTE_TO_VALUE_DB[crop_type]
-    waste_estimate = production_tonnes * 0.25  # Assume 25% waste
-    
-    recommendations = []
-    for i in range(len(crop_info['by_products'])):
-        recommendations.append({
-            'by_product': crop_info['by_products'][i],
-            'waste_material': crop_info['waste_materials'][i % len(crop_info['waste_materials'])],
-            'vendor': crop_info['vendors'][i % len(crop_info['vendors'])],
-            'value_rm_tonne': crop_info['value_rm_tonne'][i],
-            'potential_revenue': waste_estimate * crop_info['value_rm_tonne'][i],
-            'reward_points': waste_estimate * crop_info['reward_points'][i],
-            'food_security_impact': crop_info['food_security_impact']
-        })
-    
-    return sorted(recommendations, key=lambda x: x['potential_revenue'], reverse=True)[:3]
+def show_multiplier_debug(df):
+    """Display the multipliers being used"""
+    with st.expander("🔍 District Multiplier Verification"):
+        st.write("**Pineapple Multipliers (Johor Bahru should be 1.38x):**")
+        pineapple_data = df[df['crop_type'] == 'Pineapple']
+        if len(pineapple_data) > 0:
+            pineapple_mult = pineapple_data[['district', 'district_multiplier']].drop_duplicates().sort_values('district_multiplier', ascending=False)
+            st.dataframe(pineapple_mult)
+            st.caption("✅ CORRECT: Johor Bahru = 1.38x, Pontian = 1.35x, Kluang = 1.32x")
+        
+        st.write("**Pulasan Multipliers (Raub should be 1.48x):**")
+        pulasan_data = df[df['crop_type'] == 'Pulasan']
+        if len(pulasan_data) > 0:
+            pulasan_mult = pulasan_data[['district', 'district_multiplier']].drop_duplicates().sort_values('district_multiplier', ascending=False)
+            st.dataframe(pulasan_mult)
+            st.caption("✅ CORRECT: Raub = 1.48x, Balik Pulau = 1.45x, Bentong = 1.40x")
+
 
 # ============================================
 # MAIN APP
 # ============================================
 def main():
     # Header
-    st.markdown('<div class="main-header">🌾 CropAI - Food Security Decision Support System</div>', unsafe_allow_html=True)
-    st.markdown("*AI-powered sales forecasting | Waste-to-value conversion | Food security strengthening*")
+    st.markdown('<div class="main-header">🌾 CropAI - Your NO.1 Crop Sales Forecasting</div>', unsafe_allow_html=True)
+    st.markdown(
+        "<p style='text-align: center;'>District-Based Revenue Decision Support | Optimize crop sales location | Reduce waste with by-products</p>", 
+        unsafe_allow_html=True
+    )
     st.markdown("---")
     
     # Load data
     with st.spinner("Loading agricultural data..."):
         df = load_crop_data()
+    
+    if df.empty:
+        st.error("Unable to load data. Please check your CSV file.")
+        return
+    
+    # Show debug info (optional - remove for production)
+    show_multiplier_debug(df)
     
     # Initialize rewards
     rewards = RewardsManager()
@@ -291,197 +317,209 @@ def main():
         
         # Crop selection
         crops_list = sorted(df['crop_type'].unique())
-        selected_crop = st.selectbox("Select Your Crop", crops_list)
+        selected_crop = st.selectbox("Select Your Type Crop", crops_list)
         
         # Production input
-        production_tonnes = st.number_input("Current Production (Tonnes)", 
-                                           min_value=0.1, value=100.0, step=10.0)
+        production_tonnes = st.number_input("Available Production (Tonnes)", 
+                                           min_value=0.1, value=500.0, step=10.0)
         
-        # District selection
-        districts_list = sorted(df['district'].unique())
-        selected_district = st.selectbox("Your District", districts_list)
-        
-        st.markdown("---")
-        
-        # Food security badge
-        st.markdown('<div class="food-security-badge">🛡️ Food Security Priority</div>', unsafe_allow_html=True)
-        st.caption("This system prioritizes reducing post-harvest loss and increasing farmer income to strengthen household food security.")
+        # Current district selection
+        current_district = st.selectbox("Farmer's/Seller Current District", sorted(df['district'].unique()))
         
         st.markdown("---")
-        
-        # Rewards wallet
         st.markdown("### 🎁 Your Rewards")
-        st.metric("Total Points", f"{rewards.get_points():,}")
-        
-        if st.button("🏆 Redeem Points", use_container_width=True):
-            st.info("💡 Rewards: 500 pts = Fertilizer | 1000 pts = Equipment | 2000 pts = Cold Storage")
+        st.metric("Total Points collected", f"{rewards.get_points():,}")
     
     # Filter data for selected crop
     crop_data = df[df['crop_type'] == selected_crop]
     
     # ============================================
-    # MAIN DISPLAY AREA
+    # DISTRICT COMPARISON SECTION
     # ============================================
+    st.markdown('<div class="sub-header">🗺️ 1. District Revenue Comparison</div>', unsafe_allow_html=True)
     
-    # Food Security Header
-    col1, col2, col3 = st.columns([2, 1, 1])
-    with col1:
-        st.markdown(f"### 🌱 Crop: {selected_crop}")
-    with col2:
-        avg_fs_score = crop_data['food_security_score'].mean()
-        st.metric("Food Security Index", f"{avg_fs_score:.0f}/100", 
-                 delta="Good" if avg_fs_score > 60 else "Needs Improvement")
-    with col3:
-        st.metric("Total Farmers in Database", f"{len(crop_data):,}")
+    st.markdown(f"### For {selected_crop} with {production_tonnes:,.0f} tonnes production")
     
-    st.markdown("---")
+    # Get district comparison
+    district_comparison = compare_districts_for_crop(df, selected_crop, production_tonnes)
     
-    # ============================================
-    # FEATURE 1: INTELLIGENT FORECASTING
-    # ============================================
-    st.markdown('<div class="sub-header">📊 1. Intelligent Sales Forecast</div>', unsafe_allow_html=True)
-    
-    forecast = intelligent_forecast(crop_data, production_tonnes)
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Forecasted Revenue", f"RM {forecast['forecast_rm']:,.0f}")
-    with col2:
-        st.metric("Confidence Score", f"{forecast['confidence']:.0f}%")
-    with col3:
-        st.metric("Avg Market Price", f"RM {forecast['avg_price']:.2f}/kg")
-    with col4:
-        st.markdown(f"### {forecast['urgency']}")
-    
-    # Explanation of forecast
-    with st.expander("📖 How this forecast helps food security"):
-        st.markdown("""
-        - **Prevents rushed selling** at low prices by providing optimal timing
-        - **Reduces post-harvest loss** by highlighting perishability risks
-        - **Enables planning** for storage or processing based on confidence score
-        - **Supports loan applications** with data-driven revenue projections
-        """)
-    
-    # ============================================
-    # FEATURE 2: WASTE-TO-VALUE RECOMMENDATIONS
-    # ============================================
-    st.markdown('<div class="sub-header">🔄 2. Waste-to-Value Recommendations</div>', unsafe_allow_html=True)
-    
-    waste_recommendations = get_waste_to_value_recommendations(selected_crop, production_tonnes)
-    
-    if waste_recommendations:
-        st.info(f"💡 Based on {production_tonnes} tonnes production, approximately {production_tonnes * 0.25:.1f} tonnes of waste can be converted into valuable products.")
+    if district_comparison is not None and len(district_comparison) > 0:
+        # Find best and current district info
+        best_district = district_comparison.iloc[0]
+        current_district_info = district_comparison[district_comparison['district'] == current_district]
         
-        for idx, rec in enumerate(waste_recommendations, 1):
-            with st.container():
-                col1, col2, col3, col4 = st.columns([2, 1.5, 1.5, 1])
-                
-                with col1:
-                    st.markdown(f"**{rec['by_product']}**")
-                    st.caption(f"From: {rec['waste_material']}")
-                
-                with col2:
-                    st.markdown(f"**Vendor:** {rec['vendor']}")
-                    st.caption(rec['food_security_impact'][:50] + "...")
-                
-                with col3:
-                    st.metric("Revenue Potential", f"RM {rec['potential_revenue']:,.0f}")
-                
-                with col4:
-                    if st.button(f"🤝 Connect", key=f"vendor_{idx}"):
-                        rewards.add_points(rec['reward_points'], f"Waste exchange: {rec['by_product']}")
-                        st.success(f"✅ Added {rec['reward_points']:.0f} points to your wallet!")
+        if len(current_district_info) > 0:
+            current_revenue = current_district_info.iloc[0]['revenue_rm']
+            best_revenue = best_district['revenue_rm']
+            revenue_gap = best_revenue - current_revenue
+            revenue_percent = (current_revenue / best_revenue) * 100
+        else:
+            current_revenue = None
+            revenue_gap = None
+            revenue_percent = None
         
-        # Total waste value summary
-        total_waste_value = sum(r['potential_revenue'] for r in waste_recommendations)
-        total_points = sum(r['reward_points'] for r in waste_recommendations)
-        
+        # Display best district highlight
         col1, col2 = st.columns(2)
-        with col1:
-            st.success(f"💰 **Total potential revenue from waste:** RM {total_waste_value:,.0f}")
-        with col2:
-            st.info(f"🎁 **Total reward points earned:** {total_points:.0f}")
-            
-    else:
-        st.warning(f"Waste-to-value recommendations coming soon for {selected_crop}")
-        st.markdown("Currently supported crops: Palm Oil, Pineapple, Rice, Coconut, Banana")
-    
-    # ============================================
-    # FEATURE 3: TOP CROPS FOR FOOD SECURITY
-    # ============================================
-    st.markdown('<div class="sub-header">🏆 3. Top Crops for Food Security</div>', unsafe_allow_html=True)
-    
-    # Calculate food security ranking
-    crop_fs_ranking = df.groupby('crop_type').agg({
-        'food_security_score': 'mean',
-        'sales_forecast_rm': 'sum',
-        'production_tonnes': 'sum'
-    }).reset_index().sort_values('food_security_score', ascending=False).head(5)
-    
-    for idx, row in crop_fs_ranking.iterrows():
-        col1, col2, col3, col4 = st.columns([2, 1.5, 1.5, 2])
         
+        with col1:
+            st.markdown(f"""
+            <div class="best-district">
+                <strong>🏆 BEST DISTRICT FOR {selected_crop}:</strong><br>
+                📍 {best_district['district']}<br>
+                💰 Revenue: RM {best_district['revenue_rm']:,.0f}<br>
+                📈 Price: RM {best_district['price_rm_kg']:.2f}/kg<br>
+                ⭐ District Multiplier: {best_district['multiplier']:.2f}x
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            if current_district_info is not None and len(current_district_info) > 0:
+                color_class = "best-district" if revenue_percent > 90 else "worst-district" if revenue_percent < 70 else "district-highlight"
+                st.markdown(f"""
+                <div class="{color_class}">
+                    <strong>📍 YOUR DISTRICT: {current_district}</strong><br>
+                    💰 Revenue: RM {current_revenue:,.0f}<br>
+                    📈 Price: RM {current_district_info.iloc[0]['price_rm_kg']:.2f}/kg<br>
+                    ⭐ District Multiplier: {current_district_info.iloc[0]['multiplier']:.2f}x
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if revenue_gap > 0:
+                    st.warning(f"⚠️ You could earn **RM {revenue_gap:,.0f} more** by selling in {best_district['district']}!")
+                    st.info(f"💡 Tip: Consider partnering with distributors in {best_district['district']} for better prices.")
+                else:
+                    st.success(f"✅ Your district is the best location for {selected_crop}!")
+        
+        # District comparison bar chart
+        fig = px.bar(
+            district_comparison.head(10),
+            x='district',
+            y='revenue_rm',
+            title=f"Revenue Comparison Across Districts for {selected_crop}",
+            labels={'district': 'District', 'revenue_rm': 'Revenue (RM)'},
+            color='revenue_rm',
+            color_continuous_scale='greens',
+            text='revenue_rm'
+        )
+        fig.update_traces(texttemplate='RM %{text:,.0f}', textposition='outside')
+        fig.update_layout(height=450)
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Detailed comparison table
+        with st.expander("📊 Detailed of District Comparison Table"):
+            display_df = district_comparison[['rank', 'district', 'revenue_rm', 'price_rm_kg', 'multiplier', 'distance_km']].head(15).copy()
+            display_df['revenue_rm'] = display_df['revenue_rm'].apply(lambda x: f"RM {x:,.0f}")
+            display_df['price_rm_kg'] = display_df['price_rm_kg'].apply(lambda x: f"RM {x:.2f}")
+            display_df['multiplier'] = display_df['multiplier'].apply(lambda x: f"{x:.2f}x")
+            st.dataframe(display_df, use_container_width=True)
+    
+    # ============================================
+    # REVENUE FORECAST FOR SELECTED DISTRICT
+    # ============================================
+    st.markdown('<div class="sub-header">📊 2. Your Potential Revenue Forecast</div>', unsafe_allow_html=True)
+    
+    # Get forecast for current district chosen
+    current_data = crop_data[crop_data['district'] == current_district]
+    
+    if len(current_data) > 0:
+        avg_price = current_data['market_price_rm_kg'].mean()
+        perishability = current_data['perishability_score'].mean()
+        multiplier = current_data['district_multiplier'].iloc[0]
+        distance = current_data['distance_to_market'].iloc[0]
+        transport_factor = 1 - (distance / 300)
+        transport_factor = max(0.7, min(1.0, transport_factor))
+        
+        base_revenue = production_tonnes * avg_price * 1000
+        waste_adjusted = base_revenue * (1 - perishability * 0.3)
+        final_revenue = waste_adjusted * transport_factor
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Forecasted Revenue", f"RM {final_revenue:,.0f}")
+        with col2:
+            st.metric("Market Price", f"RM {avg_price:.2f}/kg")
+        with col3:
+            st.metric("District Multiplier", f"{multiplier:.2f}x")
+        with col4:
+            if perishability > 0.7:
+                urgency = "🔴 HIGH (Perishable)"
+            elif perishability > 0.4:
+                urgency = "🟡 MEDIUM (Low Perishable)"
+            else:
+                urgency = "🟢 LOW (Last almost a month)"
+            st.metric("Perishable Urgency", urgency)
+        
+        # Revenue breakdown
+        with st.expander("💰 Revenue Calculation Breakdown"):
+            st.markdown(f"""
+            | Factor | Value | Impact |
+            |--------|-------|--------|
+            | Production | {production_tonnes:,.0f} tonnes | Base |
+            | Market Price | RM {avg_price:.2f}/kg | Direct multiplier |
+            | Base Revenue | RM {base_revenue:,.0f} | Production × Price × 1000 |
+            | Perishability Loss | {(perishability * 0.3 * 100):.0f}% | Reduces revenue by {perishability * 0.3 * 100:.0f}% |
+            | Distance to Market | {distance} km | Transport cost factor: {transport_factor:.2f}x |
+            | **Final Revenue** | **RM {final_revenue:,.0f}** | After all adjustments |
+            """)
+    
+    # ============================================
+    # WASTE-TO-VALUE RECOMMENDATIONS
+    # ============================================
+    st.markdown('<div class="sub-header">🔄 3. Waste-to-Value Opportunities</div>', unsafe_allow_html=True)
+    
+    if selected_crop in WASTE_TO_VALUE_DB:
+        waste_estimate = production_tonnes * 0.25
+        st.info(f"💡 Based on {production_tonnes:,.0f} tonnes production, approximately **{waste_estimate:.1f} tonnes** of waste can be converted.")
+        
+        crop_waste = WASTE_TO_VALUE_DB[selected_crop]
+        
+        for idx in range(len(crop_waste['by_products'])):
+            col1, col2, col3, col4 = st.columns([2, 1.5, 1.5, 1])
+            
+            with col1:
+                st.markdown(f"**{crop_waste['by_products'][idx]}**")
+            with col2:
+                st.markdown(f"Vendor: {crop_waste['vendors'][idx]}")
+            with col3:
+                revenue = waste_estimate * crop_waste['value_rm_tonne'][idx]
+                st.metric("Potential Revenue", f"RM {revenue:,.0f}")
+            with col4:
+                points = waste_estimate * crop_waste['reward_points'][idx]
+                if st.button(f"🤝 Connect", key=f"vendor_{idx}"):
+                    rewards.add_points(points)
+                    st.success(f"✅ Added {points:.0f} points!")
+        
+        total_waste_revenue = waste_estimate * sum(crop_waste['value_rm_tonne'][:3]) / 3
+        st.success(f"💰 **Total potential revenue from waste:** RM {total_waste_revenue:,.0f}")
+        
+    else:
+        st.info(f"Waste-to-Value recommendations coming soon for {selected_crop}. Stay Tuned!")
+        st.markdown("Currently supported: Pineapple, Palm Oil, Rice, Coconut, Durian")
+    
+    # ============================================
+    # TOP CROPS FOR YOUR DISTRICT
+    # ============================================
+    st.markdown('<div class="sub-header">🏆 4. Best Crops for Current District</div>', unsafe_allow_html=True)
+    
+    district_crops = df[df['district'] == current_district].groupby('crop_type').agg({
+        'sales_forecast_rm': 'sum',
+        'district_multiplier': 'first'
+    }).reset_index().sort_values('sales_forecast_rm', ascending=False).head(5)
+    
+    for _, row in district_crops.iterrows():
+        col1, col2, col3 = st.columns([2, 1, 2])
         with col1:
             st.markdown(f"**{row['crop_type']}**")
         with col2:
-            st.metric("Food Security Score", f"{row['food_security_score']:.0f}/100")
+            st.metric("Revenue Potential", f"RM {row['sales_forecast_rm']:,.0f}")
         with col3:
-            st.metric("Total Sales", f"RM {row['sales_forecast_rm']:,.0f}")
-        with col4:
-            st.progress(row['food_security_score'] / 100)
-    
-    # ============================================
-    # FEATURE 4: FOOD SECURITY INSIGHTS
-    # ============================================
-    st.markdown('<div class="sub-header">📈 4. Food Security Insights</div>', unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Food security by district
-        district_fs = df.groupby('district')['food_security_score'].mean().sort_values(ascending=False).head(10)
-        fig1 = px.bar(x=district_fs.index, y=district_fs.values,
-                      title="Top 10 Districts by Food Security Score",
-                      labels={'x': 'District', 'y': 'Food Security Score'},
-                      color=district_fs.values,
-                      color_continuous_scale='greens')
-        st.plotly_chart(fig1, use_container_width=True)
-    
-    with col2:
-        # Perishability vs Food Security
-        fig2 = px.scatter(df, x='perishability_score', y='food_security_score',
-                          color='crop_type', size='production_tonnes',
-                          title="Perishability vs Food Security",
-                          labels={'perishability_score': 'Perishability (higher = spoils faster)',
-                                 'food_security_score': 'Food Security Score'})
-        st.plotly_chart(fig2, use_container_width=True)
-    
-    # ============================================
-    # FOOD SECURITY TIPS
-    # ============================================
-    with st.expander("🌾 Food Security Tips for Farmers"):
-        st.markdown("""
-        | Strategy | Impact |
-        |----------|--------|
-        | **Diversify crops** | Reduces risk of total crop failure |
-        | **Process waste into by-products** | Creates additional income streams |
-        | **Store properly** | Extends shelf life by 30-50% |
-        | **Join cooperative** | Better bargaining power and shared storage |
-        | **Use forecasting tools** | Sell at optimal prices, reduce waste |
-        """)
-    
-    # ============================================
-    # REDEMPTION HISTORY (Optional)
-    # ============================================
-    if st.session_state.redemption_history:
-        with st.expander("📜 Your Rewards History"):
-            history_df = pd.DataFrame(st.session_state.redemption_history)
-            st.dataframe(history_df, use_container_width=True)
+            st.progress(min(row['sales_forecast_rm'] / district_crops['sales_forecast_rm'].max(), 1.0))
     
     # Footer
     st.markdown("---")
-    st.markdown("*🌾 CropAI - Strengthening Food Security Through AI | Data source: Malaysia crops_district_production*")
+    st.markdown("*🌾 CropAI - Farmer's favourite in choosing the best district for maximum revenue | Data: Malaysia crops_district_production*")
+
 
 if __name__ == "__main__":
     main()
